@@ -1,0 +1,8 @@
+{
+	"grid_width": 20,
+	"grid_height": 20,
+	"include_diagonal": false,
+	"log_output": true,
+	"vector_size": 4,
+	"test_fps": 5
+}

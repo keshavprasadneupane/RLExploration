@@ -1,0 +1,16 @@
+[project]
+name = "rlexploration"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium[toy-text]>=1.4.0",
+    "ipykernel>=7.4.0",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.3",
+    "seaborn>=0.13.2",
+    "stable-baselines3>=2.9.0",
+    "torch>=2.14.1",
+    "tqdm>=4.70.1",
+]
