@@ -38,7 +38,7 @@ uv run python -m cart_pole.cart_pole_q_table.train
 Display available training arguments:
 
 ```bash
-uv run python -m cart_pole.cart_pole_q_table.train --help
+uv run python -m cart_pole.cart_pole_q_table.train -h
 ```
 
 Override the number of training episodes:
@@ -46,6 +46,14 @@ Override the number of training episodes:
 ```bash
 uv run python -m cart_pole.cart_pole_q_table.train --episodes 100000
 ```
+
+Save the Q-table to a custom path:
+
+```bash
+uv run python -m cart_pole.cart_pole_q_table.train --save-path models/cartpole_custom.npy
+```
+
+Refer to `-h` or `--help` for all available training options and their descriptions.
 
 ## 2. Evaluation
 
@@ -58,7 +66,7 @@ uv run python -m cart_pole.cart_pole_q_table.test
 Display available evaluation arguments:
 
 ```bash
-uv run python -m cart_pole.cart_pole_q_table.test --help
+uv run python -m cart_pole.cart_pole_q_table.test -h
 ```
 
 Evaluate for 1,000 episodes:
@@ -67,29 +75,21 @@ Evaluate for 1,000 episodes:
 uv run python -m cart_pole.cart_pole_q_table.test --episodes 1000
 ```
 
-Render the agent continuously in a visible Gymnasium environment. Close the window or press `Ctrl+C` to stop:
+Render the agent in a visible Gymnasium environment. Close the window or press `Ctrl+C` to stop:
 
 ```bash
 uv run python -m cart_pole.cart_pole_q_table.test --render-mode human
 ```
 
 Load a Q-table from a custom path:
-and the path is relative to current working directory.
 
 ```bash
-uv run python -m cart_pole.cart_pole_q_table.test \
-    --q-table-path models/cartpole.npy
+uv run python -m cart_pole.cart_pole_q_table.test --q-table-path models/cartpole_custom.npy
 ```
 
-Render the agent using a custom Q-table:
+Refer to `-h` or `--help` for all available evaluation options and their descriptions.
 
-```bash
-uv run python -m cart_pole.cart_pole_q_table.test \
-    --render-mode human \
-    --q-table-path models/cartpole.npy
-```
-
-Relative paths supplied through `--q-table-path` are resolved from the current working directory.
+**Path resolution:** Relative paths supplied through `--save-path` and `--q-table-path` are resolved from the current working directory.
 
 ## 3. Typical Workflow
 
@@ -108,16 +108,11 @@ Ensure the training script's save path matches the evaluation script's default Q
 
 ## 4. Running as a Python Module
 
-The `-m` option runs a module through Python's module system, using its package path:
+The `-m` option runs a module through Python's module system using its package path:
 
 ```bash
 uv run python -m cart_pole.cart_pole_q_table.train
 uv run python -m cart_pole.cart_pole_q_table.test
 ```
 
-This supports package-relative imports, such as:
-
-```python
-from ..agent import CartPoleQLearningAgent
-```
-
+Run these commands from the repository root to ensure Python can resolve the package and its imports.

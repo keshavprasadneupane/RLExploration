@@ -8,6 +8,12 @@ import numpy as np
 from .agent import CartPoleQLearningAgent
 
 
+from shared.validate import (
+	bounded_float,
+	bounded_int,
+	resolve_path,
+)
+
 CURRENT_DIR = Path(__file__).resolve().parent
 
 DEFAULTS = {
@@ -24,65 +30,65 @@ DEFAULTS = {
 }
 
 
-def bounded_int(minimum: int, maximum: int):
-    def validate(value: str) -> int:
-        try:
-            number = int(value)
-        except ValueError as exc:
-            raise argparse.ArgumentTypeError(
-                "must be an integer"
-            ) from exc
+# def bounded_int(minimum: int, maximum: int):
+#     def validate(value: str) -> int:
+#         try:
+#             number = int(value)
+#         except ValueError as exc:
+#             raise argparse.ArgumentTypeError(
+#                 "must be an integer"
+#             ) from exc
 
-        if not minimum <= number <= maximum:
-            raise argparse.ArgumentTypeError(
-                f"must be between {minimum} and {maximum}"
-            )
+#         if not minimum <= number <= maximum:
+#             raise argparse.ArgumentTypeError(
+#                 f"must be between {minimum} and {maximum}"
+#             )
 
-        return number
+#         return number
 
-    return validate
-
-
-def bounded_float(
-    minimum: float,
-    maximum: float,
-    *,
-    min_inclusive: bool = True,
-):
-    def validate(value: str) -> float:
-        try:
-            number = float(value)
-        except ValueError as exc:
-            raise argparse.ArgumentTypeError(
-                "must be a number"
-            ) from exc
-
-        if not np.isfinite(number):
-            raise argparse.ArgumentTypeError(
-                "must be a finite number"
-            )
-
-        valid_min = (
-            number >= minimum
-            if min_inclusive
-            else number > minimum
-        )
-
-        if not valid_min or number > maximum:
-            left = "[" if min_inclusive else "("
-            raise argparse.ArgumentTypeError(
-                f"must be in the range "
-                f"{left}{minimum}, {maximum}]"
-            )
-
-        return number
-
-    return validate
+#     return validate
 
 
-def resolve_path(path: str | Path) -> Path:
-    """Resolve a path relative to the current working directory."""
-    return Path(path).expanduser().resolve()
+# def bounded_float(
+#     minimum: float,
+#     maximum: float,
+#     *,
+#     min_inclusive: bool = True,
+# ):
+#     def validate(value: str) -> float:
+#         try:
+#             number = float(value)
+#         except ValueError as exc:
+#             raise argparse.ArgumentTypeError(
+#                 "must be a number"
+#             ) from exc
+
+#         if not np.isfinite(number):
+#             raise argparse.ArgumentTypeError(
+#                 "must be a finite number"
+#             )
+
+#         valid_min = (
+#             number >= minimum
+#             if min_inclusive
+#             else number > minimum
+#         )
+
+#         if not valid_min or number > maximum:
+#             left = "[" if min_inclusive else "("
+#             raise argparse.ArgumentTypeError(
+#                 f"must be in the range "
+#                 f"{left}{minimum}, {maximum}]"
+#             )
+
+#         return number
+
+#     return validate
+
+
+# def resolve_path(path: str | Path) -> Path:
+#     """Resolve a path relative to the current working directory."""
+#     return Path(path).expanduser().resolve()
 
 
 def parse_args() -> argparse.Namespace:
@@ -150,7 +156,7 @@ def parse_args() -> argparse.Namespace:
         metavar="PATH",
         help=(
             "Path where the Q-table will be saved. "
-            "Use Relative or absolute paths."
+            "Use Relative or absolute paths. "
         ),
     )
     parser.add_argument(
