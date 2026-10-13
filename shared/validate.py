@@ -61,12 +61,6 @@ def bounded_float(
 
     return validate
 
-
-def resolve_path(path: str | Path) -> Path:
-    """Resolve a path relative to the current working directory."""
-    return Path(path).expanduser().resolve()
-
-
 def validate_device(value: str) -> str:
     """Validate the requested PyTorch device."""
 
@@ -94,3 +88,10 @@ def validate_device(value: str) -> str:
 
     return value
 
+def resolve_path(current_dir: Path, path: str | Path) -> Path:
+	"""Resolve a path relative to the current directory."""
+	path = Path(path)
+	if not path.is_absolute():
+		path = current_dir / path
+
+	return path.resolve()

@@ -119,3 +119,6 @@ uv run python -m cart_pole.test
 ```
 
 Run these commands from the repository root to ensure Python can resolve the package and its imports.
+
+
+**Path resolution:** Paths supplied through `--save-path` and `--model-path` are resolved relative to the corresponding script's directory when given as relative paths. Absolute paths are also supported, but relative paths are recommended.

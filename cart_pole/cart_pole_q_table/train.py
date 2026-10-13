@@ -151,7 +151,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--save-path",
-        type=resolve_path,
+        type=lambda path: resolve_path(CURRENT_DIR, path),
         default=DEFAULTS["save_path"],
         metavar="PATH",
         help=(

@@ -147,7 +147,7 @@ def parse_args() -> argparse.Namespace:
 	)
 	parser.add_argument(
 		"--save-path",
-		type=resolve_path,
+		type=lambda path: resolve_path(CURRENT_DIR, path),
 		default=DEFAULTS["save_path"],
 		metavar="PATH",
 		help="Path where the model checkpoint will be saved.",
@@ -159,6 +159,7 @@ def parse_args() -> argparse.Namespace:
 		parser.error(
 			"--min-epsilon cannot exceed --initial-epsilon"
 		)
+
 
 	return args
 

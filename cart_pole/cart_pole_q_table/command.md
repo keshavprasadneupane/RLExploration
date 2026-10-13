@@ -75,7 +75,15 @@ Evaluate for 1,000 episodes:
 uv run python -m cart_pole.cart_pole_q_table.test --episodes 1000
 ```
 
-Render the agent in a visible Gymnasium environment. Close the window or press `Ctrl+C` to stop:
+Enable verbose output to print the reward for every evaluation episode:
+
+```bash
+uv run python -m cart_pole.cart_pole_q_table.test -v
+```
+
+The `-v` and `--verbose` flags are equivalent. Without verbose mode, individual episode rewards are not printed during non-rendered evaluation; summary statistics are displayed after evaluation.
+
+Render the agent in a visible Gymnasium environment. Episode rewards are printed continuously. Close the window or press `Ctrl+C` to stop:
 
 ```bash
 uv run python -m cart_pole.cart_pole_q_table.test --render-mode human
@@ -87,32 +95,15 @@ Load a Q-table from a custom path:
 uv run python -m cart_pole.cart_pole_q_table.test --q-table-path models/cartpole_custom.npy
 ```
 
+Combine options as needed, for example, to evaluate 1,000 episodes with verbose output using a custom Q-table:
+
+```bash
+uv run python -m cart_pole.cart_pole_q_table.test \
+    --episodes 1000 \
+    --verbose \
+    --q-table-path models/cartpole_custom.npy
+```
+
 Refer to `-h` or `--help` for all available evaluation options and their descriptions.
 
-**Path resolution:** Relative paths supplied through `--save-path` and `--q-table-path` are resolved from the current working directory.
-
-## 3. Typical Workflow
-
-```bash
-# Train the agent
-uv run python -m cart_pole.cart_pole_q_table.train
-
-# Evaluate the trained agent
-uv run python -m cart_pole.cart_pole_q_table.test
-
-# Render the trained agent
-uv run python -m cart_pole.cart_pole_q_table.test --render-mode human
-```
-
-Ensure the training script's save path matches the evaluation script's default Q-table path.
-
-## 4. Running as a Python Module
-
-The `-m` option runs a module through Python's module system using its package path:
-
-```bash
-uv run python -m cart_pole.cart_pole_q_table.train
-uv run python -m cart_pole.cart_pole_q_table.test
-```
-
-Run these commands from the repository root to ensure Python can resolve the package and its imports.
+**Path resolution:** Paths supplied through `--save-path` and `--q-table-path` are resolved relative to the corresponding script's directory when given as relative paths. Absolute paths are also supported, but relative paths are recommended.

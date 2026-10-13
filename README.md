@@ -24,6 +24,9 @@ For example:
 
 ```text
 RLExploration/
+├── shared/
+│   ├── __init__.py
+│   └── validate.py
 ├── example/
 │   ├── __init__.py
 │   ├── config.py
@@ -46,6 +49,8 @@ This is an illustrative structure, not a mandatory template. Small projects may 
 
 The root-level `pyproject.toml` and `uv.lock` define the repository's shared Python project and its resolved environment. Projects use this common environment while keeping their implementations and generated artifacts separate.
 
+The `shared/` directory contains reusable functionality that genuinely benefits multiple projects, such as argument validators and general-purpose utilities. Keep project-specific implementations within their respective project directories.
+
 Directory separation does not automatically isolate implementation details. Each project should have clear boundaries and avoid importing another project's internal modules simply to reuse existing functionality.
 
 ## Running a Project
@@ -64,7 +69,7 @@ Replace `example` with the package name of the project you want to run. For exam
 uv run python -m blackjack.main
 ```
 
-This approach uses the repository's Python environment managed by `uv` and allows Python to resolve package-relative imports correctly.
+This approach uses the repository's Python environment managed by `uv` and allows Python to resolve package-qualified imports correctly.
 
 Run commands from the repository root unless a project explicitly documents otherwise.
 
@@ -79,7 +84,7 @@ from .config import load_config
 from .game import GridGame
 ```
 
-When importing a project's public functionality from an external script, use its package-qualified name:
+When importing a project's functionality from an external module, use its package-qualified name:
 
 ```python
 from example.config import GridConfig, load_config
@@ -89,9 +94,22 @@ from example.env import GridNavigationEnv
 
 The directory must be importable as a Python package, typically by including an `__init__.py` file.
 
-Although cross-project imports are technically possible, avoid them when they make one project dependent on another project's internal implementation. If multiple projects genuinely need the same functionality, consider extracting it into an explicitly maintained shared module with a clear interface.
+For shared functionality, use repository-root-qualified imports:
 
-Do not rely on the current working directory to locate source modules. Use the intended package structure and execution workflow.
+```python
+from shared.validate import (
+    bounded_int,
+    bounded_float,
+    resolve_path,
+    validate_device,
+)
+```
+
+This convention keeps shared imports consistent across projects without duplicating utility implementations.
+
+Avoid cross-project imports when they make one project dependent on another project's internal implementation. If multiple projects genuinely need the same functionality, place it in `shared/` behind a clear interface.
+
+Do not rely on the current working directory to locate individual source files. Use the intended package structure and execution workflow.
 
 ## Configuration Paths
 
@@ -188,6 +206,19 @@ model = PPO.load(str(model_path), env=env)
 
 Use the appropriate model class and filename for the algorithm and framework.
 
+For paths that must be relative to the repository root, establish the root explicitly instead of assuming the current working directory or the module's directory is the root.
+
+For example, from a module located at `cart_pole/cart_pole_dqn/train.py`:
+
+```python
+from pathlib import Path
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+SHARED_DIR = REPOSITORY_ROOT / "shared"
+```
+
+The parent index depends on the module's location. If several modules need repository-root-relative paths, use a shared helper or a clearly defined root constant.
+
 Generated models and other large artifacts should be excluded from version control when appropriate. Keep source code, configuration, documentation, and selected reproducible results under version control.
 
 ## General Conventions
@@ -195,11 +226,12 @@ Generated models and other large artifacts should be excluded from version contr
 - **Project isolation:** Keep each project's implementation, configuration, and generated artifacts within its own directory.
 - **Feature ownership:** Implement project-specific functionality within the project that uses it.
 - **Shared environment:** Use the root-level Python environment and dependency configuration managed by `uv`.
-- **Package imports:** Prefer relative imports within a project and package-qualified imports when accessing its public functionality.
+- **Package imports:** Prefer relative imports within a project and package-qualified imports when accessing its functionality.
+- **Shared imports:** Import reusable utilities through their repository-root-qualified package paths, such as `from shared.validate import bounded_int`.
 - **Minimal coupling:** Avoid dependencies on another project's internal implementation.
-- **Controlled sharing:** Share genuinely reusable functionality through explicit interfaces rather than importing arbitrary files between projects.
+- **Controlled sharing:** Share genuinely reusable functionality through the root-level `shared/` package rather than importing arbitrary files between projects.
 - **Module execution:** Prefer `uv run python -m package.module` from the repository root.
-- **Path handling:** Use `Path(__file__).resolve().parent` for paths anchored to a module or project.
+- **Path handling:** Use `Path(__file__).resolve().parent` for paths anchored to a module or project, and an explicitly defined repository root for repository-relative paths.
 - **Configuration reuse:** Parse configuration into structured objects where appropriate and pass those objects to components instead of repeatedly loading the same file.
 - **Artifact organization:** Store models, checkpoints, logs, and evaluation outputs with the project that generates them.
 - **Reproducibility:** Record important hyperparameters, random seeds, and evaluation metrics where appropriate.

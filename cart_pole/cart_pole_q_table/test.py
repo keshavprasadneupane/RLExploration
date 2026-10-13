@@ -1,3 +1,4 @@
+
 import argparse
 from pathlib import Path
 from statistics import multimode
@@ -6,39 +7,18 @@ import gymnasium as gym
 import numpy as np
 
 from .agent import CartPoleQLearningAgent
-
+from shared.validate import (
+    bounded_int,
+    resolve_path,
+)
 
 CURRENT_DIR = Path(__file__).resolve().parent
 
 DEFAULTS = {
-    "q_table_path": CURRENT_DIR /"models"/ "cartpole_q_table.npy",
+    "q_table_path": CURRENT_DIR / "models" / "cartpole_q_table.npy",
     "episodes": 100,
     "render_mode": "none",
 }
-
-
-def bounded_int(minimum: int, maximum: int):
-    def validate(value: str) -> int:
-        try:
-            number = int(value)
-        except ValueError as exc:
-            raise argparse.ArgumentTypeError(
-                "must be an integer"
-            ) from exc
-
-        if not minimum <= number <= maximum:
-            raise argparse.ArgumentTypeError(
-                f"must be between {minimum} and {maximum}"
-            )
-
-        return number
-
-    return validate
-
-
-def resolve_path(path: str | Path) -> Path:
-    """Resolve a path relative to the current working directory."""
-    return Path(path).expanduser().resolve()
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,7 +28,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--q-table-path",
-        type=resolve_path,
+        type=lambda path: resolve_path(CURRENT_DIR, path),
         default=DEFAULTS["q_table_path"],
         metavar="PATH",
         help="Path to the saved Q-table.",
@@ -69,6 +49,13 @@ def parse_args() -> argparse.Namespace:
             "'human' continuously renders the agent; "
             "'none' evaluates a fixed number of episodes."
         ),
+    )
+
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print the reward for each evaluation episode.",
     )
 
     return parser.parse_args()
@@ -102,22 +89,22 @@ def print_statistics(rewards: list[float]) -> None:
 
     print("\nEvaluation statistics")
     print("=" * 40)
-    print(f"Episodes:          {len(values)}")
-    print(f"Mean:              {np.mean(values):.2f}")
-    print(f"Median:            {np.median(values):.2f}")
+    print(f"Episodes:           {len(values)}")
+    print(f"Mean:               {np.mean(values):.2f}")
+    print(f"Median:             {np.median(values):.2f}")
     print(
-        f"Mode:              "
+        f"Mode:               "
         f"{', '.join(f'{mode:.0f}' for mode in modes)}"
     )
-    print(f"Minimum:           {np.min(values):.2f}")
-    print(f"Maximum:           {np.max(values):.2f}")
-    print(f"Range:             {np.ptp(values):.2f}")
-    print(f"Standard deviation:{np.std(values):>8.2f}")
-    print(f"25th percentile:   {np.percentile(values, 25):.2f}")
-    print(f"75th percentile:   {np.percentile(values, 75):.2f}")
-    print(f"95th percentile:   {np.percentile(values, 95):.2f}")
-    print(f"Rewards >= 475:    {np.count_nonzero(values >= 475)}")
-    print(f"Success rate:      {np.mean(values >= 475) * 100:.2f}%")
+    print(f"Minimum:            {np.min(values):.2f}")
+    print(f"Maximum:            {np.max(values):.2f}")
+    print(f"Range:              {np.ptp(values):.2f}")
+    print(f"Standard deviation: {np.std(values):.2f}")
+    print(f"25th percentile:    {np.percentile(values, 25):.2f}")
+    print(f"75th percentile:    {np.percentile(values, 75):.2f}")
+    print(f"95th percentile:    {np.percentile(values, 95):.2f}")
+    print(f"Rewards >= 475:     {np.count_nonzero(values >= 475)}")
+    print(f"Success rate:       {np.mean(values >= 475) * 100:.2f}%")
 
 
 def main() -> None:
@@ -148,14 +135,17 @@ def main() -> None:
         print(f"Render mode: {args.render_mode}")
 
         if args.render_mode == "human":
-            print("Rendering continuously. Close the window or press Ctrl+C to stop.")
+            print(
+                "Rendering continuously. "
+                "Close the window or press Ctrl+C to stop."
+            )
 
             episode = 0
 
             while True:
                 episode += 1
                 reward = run_episode(env, agent)
-                print(f"Episode {episode}: reward={reward:.0f}")
+                print(f"Episode {episode:,}: reward={reward:.0f}")
 
         else:
             print(f"Evaluating for {args.episodes:,} episodes.")
@@ -166,10 +156,12 @@ def main() -> None:
                 reward = run_episode(env, agent)
                 rewards.append(reward)
 
-                print(
-                    f"Episode {episode:>4}/{args.episodes} | "
-                    f"Reward: {reward:.0f}"
-                )
+                if args.verbose:
+                    print(
+                        f"Episode {episode:>{len(str(args.episodes))},}"
+                        f"/{args.episodes:,} | "
+                        f"Reward: {reward:.0f}"
+                    )
 
             print_statistics(rewards)
 
