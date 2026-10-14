@@ -63,7 +63,6 @@ def bounded_float(
 
 def validate_device(value: str) -> str:
     """Validate the requested PyTorch device."""
-
     try:
         device = torch.device(value)
     except (RuntimeError, ValueError) as exc:
@@ -85,7 +84,6 @@ def validate_device(value: str) -> str:
         raise argparse.ArgumentTypeError(
             "device must be cpu, cuda, or mps"
         )
-
     return value
 
 def resolve_path(current_dir: Path, path: str | Path) -> Path:

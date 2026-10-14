@@ -1,3 +1,4 @@
+import shared.tools.execution_timer # noqa: F401 , auto timer via context manager
 import argparse
 import random
 from collections import deque
@@ -7,8 +8,9 @@ import gymnasium as gym
 import numpy as np
 import torch
 
-from .agent import CartPoleDQNAgent
-
+from shared.agent.simple_dqn_agent import SimpleDQNTrainAgent
+from shared.network.feed_forward import FeedForward
+from shared.wrapper import stop_by_user
 from shared.validate import (  
 	bounded_float,
 	bounded_int,
@@ -41,7 +43,7 @@ def create_agent(
 	target_update_freq: int,
 	learning_rate: float,
 	device: str,
-) -> CartPoleDQNAgent:
+) -> SimpleDQNTrainAgent:
 	"""Create a CartPole DQN agent with the specified parameters."""
 
 	if not isinstance(env.observation_space, gym.spaces.Box):
@@ -54,15 +56,21 @@ def create_agent(
 			"Expected action space to be of type Discrete."
 		)
 
-	return CartPoleDQNAgent(
+	# Instantiate the FeedForward network independently
+	# for this cart pole env only 1 layer is needed, so hidden_dim is a single integer.
+	network = FeedForward(
 		input_dim=env.observation_space.shape[0],
 		output_dim=env.action_space.n,
-		hidden_dim=hidden_dim,
-		target_update_freq=target_update_freq,
-		learning_rate=learning_rate,
-		optimizer=torch.optim.Adam,
-		criterion=None,
+		hidden_dim=[hidden_dim],
 		device=device,
+	)
+	opimizer = torch.optim.Adam(network.parameters(), lr=learning_rate)
+
+	# Pass the pre-instantiated network into the agent
+	return SimpleDQNTrainAgent(
+		network=network,
+		target_update_freq=target_update_freq,
+		optimizer=opimizer,
 	)
 
 
@@ -160,10 +168,9 @@ def parse_args() -> argparse.Namespace:
 			"--min-epsilon cannot exceed --initial-epsilon"
 		)
 
-
 	return args
 
-
+@stop_by_user(message="Training interrupted by user.")
 def main() -> None:
 	"""Train the DQN agent and save its checkpoint."""
 
@@ -269,9 +276,10 @@ def main() -> None:
 					f"Epsilon: {epsilon:.5f} | "
 					f"Recent average reward: "
 					f"{np.mean(recent_rewards):.2f} | "
-					f"Min: {min(recent_rewards):.2f} | "
-					f"Max: {max(recent_rewards):.2f} | "
-					f"Average loss: {average_loss:.6f}"
+					f"Recent std: {np.std(recent_rewards):.2f} | "
+					f"Recent min: {min(recent_rewards):.2f} | "
+					f"Recent max: {max(recent_rewards):.2f} | "
+					f"Total Average loss: {average_loss:.6f}"
 				)
 
 				loss_sum = 0.0
