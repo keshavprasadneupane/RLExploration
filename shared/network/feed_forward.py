@@ -1,29 +1,28 @@
 from torch import nn
-from .nnetwork import NNewtork  
 
-
+from .nnetwork import NNewtork
 
 
 class FeedForward(NNewtork):
 	"""
-		A customizable feedforward neural network module.
-	
-		Supports dynamic hidden layer sizing, configurable activation functions, 
-		custom loss criteria, and optional custom network overrides.
-	
-		Notes
-		-----
-		- Defaults to `nn.SmoothL1Loss` if no loss function is provided.
-		- Device placement and tensor movement are managed automatically on forward/predict pass.
-		- Optimization and training loops are intentionally decoupled and managed externally.
+	A customizable feedforward neural network module.
+
+	Supports dynamic hidden layer sizing, configurable activation functions,
+	and custom loss criteria.
+
+	Notes
+	-----
+	- Defaults to `nn.SmoothL1Loss` if no loss function is provided.
+	- Device placement and tensor movement are managed by the base class.
+	- Optimization and training loops are intentionally decoupled and managed externally.
 	"""
 	def __init__(
 		self,
 		*,
 		input_dim: int,
 		output_dim: int,
-		hidden_dim: list[int] = [8],
-		activation: list[nn.Module] = [nn.ReLU()],
+		hidden_dim: list[int] | None = None,
+		activation: list[nn.Module] | None = None,
 		loss_function: nn.Module | None = None,
 		device: str = "cpu",
 	) -> None:
@@ -32,19 +31,34 @@ class FeedForward(NNewtork):
 		Args:
 			input_dim: Dimension of the input feature space.
 			output_dim: Dimension of the output layer.
-			hidden_dim: A list specifying the sizes of each hidden layer.
-			activation: A list of activation modules; falls back to the last element if exhausted.
-			loss_function: The loss function module to use. Defaults to SmoothL1Loss.
-			device: The device to move the network to.
+			hidden_dim: Sizes of the hidden layers. Defaults to [8].
+			activation: Activation modules for hidden layers. Defaults to [nn.ReLU()].
+				If fewer activations than hidden layers are provided, the last activation
+				is reused.
+			loss_function: Loss function module. Defaults to SmoothL1Loss.
+			device: Device on which to place the network.
 		"""
-		layers = []
+		if hidden_dim is None:
+			hidden_dim = [8]
+
+		if activation is None:
+			activation = [nn.ReLU()]
+
+		if hidden_dim and not activation:
+			raise ValueError(
+				"At least one activation function must be provided when hidden layers exist."
+			)
+
+		layers: list[nn.Module] = []
 		curr_dim = input_dim
 		activation_len = len(activation)
 
 		for i, h_dim in enumerate(hidden_dim):
 			layers.append(nn.Linear(curr_dim, h_dim))
+
 			act = activation[i] if i < activation_len else activation[-1]
 			layers.append(act)
+
 			curr_dim = h_dim
 
 		layers.append(nn.Linear(curr_dim, output_dim))
@@ -56,9 +70,6 @@ class FeedForward(NNewtork):
 			device=device,
 		)
 
-
-	def copy(self) -> "FeedForward":
-		"""Returns a deep copy of the FeedForward network instance."""
-		# so i dont have to import copy in the other files so i can just use the static method 
-		# _copy to copy the network
-		return self._copy(self)
+	def deep_copy(self) -> "FeedForward":
+		"""Returns a deep copy of the entire FeedForward instance."""
+		return self._deep_copy(self)

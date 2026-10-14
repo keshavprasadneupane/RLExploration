@@ -5,7 +5,15 @@ from shared.network.nnetwork import NNewtork
 
 
 class SimpleDQNAgentBase:
-	"""Shared policy and target network functionality for DQN."""
+	"""
+	Shared policy and target network functionality for DQN.
+	
+		Designed for environments with continuous observations and discrete actions.
+		Observations are passed directly to the neural network without discretization,
+		while the network outputs one Q-value per discrete action. The agent selects
+		actions based on these Q-values, using an exploration strategy during training
+		when applicable.
+	"""
 
 	def __new__(cls, *args, **kwargs):
 		"""
@@ -29,7 +37,7 @@ class SimpleDQNAgentBase:
 		self.device = network.device
 		self.target_update_freq = target_update_freq
 
-		self.target_network = self.network.copy()
+		self.target_network = self.network.deep_copy()
 		self.steps = 0
 
 		self.update_target_network()
@@ -147,3 +155,4 @@ class SimpleDQNTestAgent(SimpleDQNAgentBase):
 		self.target_network.load_state_dict(
 			state["target_network_state_dict"]
 		)
+

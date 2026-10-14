@@ -212,13 +212,11 @@ def main() -> None:
 			device=args.device,
 		)
 
-		# Wrap network in the agent for easy greedy action-taking.
-		# Note: No optimizer is needed or provided during evaluation.
 		agent = SimpleDQNTestAgent(
 			network=network,
 		)
 
-		# Load only the network weights from the checkpoint.
+		# Loading only the network weights from the checkpoint.
 		agent.network.load_state_dict(checkpoint["network_state_dict"])
 		agent.network.eval()
 

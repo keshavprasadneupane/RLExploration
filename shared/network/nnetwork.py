@@ -15,7 +15,6 @@ class NNewtork(nn.Module, ABC):
 	Manages a custom neural network module, loss function criterion, 
 	and automatic device placement.
 	"""
-	
 	def __init__(
 		self,
 		custom_nn: nn.Module,
@@ -58,19 +57,19 @@ class NNewtork(nn.Module, ABC):
 			state_tensor = torch.as_tensor(
 				state,
 				dtype=torch.float32,
-				device=next(self.parameters()).device,
+				device=self.device,
 			)
 			q_values = self(state_tensor)
 
 		return q_values.cpu().numpy()
 
 	@abstractmethod
-	def copy(self) -> "NNewtork":
+	def deep_copy(self) -> "NNewtork":
 		"""Returns a deep, independent copy of the network instance."""
-		return self._copy(self)
+		return self._deep_copy(self)
 
 
 	@staticmethod
-	def _copy(newtork:M) -> M:
+	def _deep_copy(newtork:M) -> M:
 		"""Static method to create a deep copy of a given network."""
 		return copy.deepcopy(newtork)
