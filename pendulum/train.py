@@ -1,3 +1,4 @@
+
 import shared.tools.execution_timer  # noqa: F401 — automatic timer
 
 import argparse
@@ -7,6 +8,7 @@ import random
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any, ClassVar
 
 import gymnasium as gym
 import numpy as np
@@ -23,7 +25,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 
 @dataclass
 class Config:
-	"""Configuration dataclass mirroring JSON config structure."""
+	"""Configuration dataclass mirroring the JSON config structure."""
 
 	episodes: int = 50_000_000
 	hidden_dim: int = 32
@@ -38,12 +40,55 @@ class Config:
 	early_exit_reward: float = -100.0
 	early_exit_count: int = 100
 	log_interval: int = 1000
-	save_interval: int = 10_000
+	save_interval: int = 1_000
 	save_path: str = "models/pendulum_dqn.pth"
+
+	CRITICAL_FIELDS: ClassVar[frozenset[str]] = frozenset(
+		{"hidden_dim", "output_dim", "device"}
+	)
+	OVERWRITABLE_FIELDS: ClassVar[frozenset[str]] = frozenset(
+		{"early_exit_count", "log_interval", "save_interval"}
+	)
 
 	@property
 	def resolved_save_path(self) -> Path:
-		return CURRENT_DIR / self.save_path if not Path(self.save_path).is_absolute() else Path(self.save_path)
+		"""Resolve the model path relative to this file."""
+		path = Path(self.save_path)
+		return path if path.is_absolute() else CURRENT_DIR / path
+
+	def can_resume_with(
+		self,
+		saved_config: dict[str, Any],
+	) -> tuple[bool, list[str]]:
+		"""Check whether the saved model architecture is compatible."""
+		mismatched_fields = [
+			name
+			for name in self.CRITICAL_FIELDS
+			if name in saved_config
+			and saved_config[name] != getattr(self, name)
+		]
+
+		return not mismatched_fields, sorted(mismatched_fields)
+
+	def merged_with_checkpoint(
+		self,
+		saved_config: dict[str, Any],
+	) -> "Config":
+		"""
+		Restore checkpoint settings while retaining current overwritable fields.
+
+		Critical fields must be checked with can_resume_with() first.
+		"""
+		current_values = asdict(self)
+
+		for name, value in saved_config.items():
+			if (
+				name in current_values
+				and name not in self.OVERWRITABLE_FIELDS
+			):
+				current_values[name] = value
+
+		return Config(**current_values)
 
 
 @dataclass
@@ -62,32 +107,58 @@ class TrainingState:
 
 
 def load_config(config_path: Path) -> Config | None:
-	"""Load configuration from JSON file. Returns None if file does not exist."""
-	resolved_path = CURRENT_DIR / config_path if not config_path.is_absolute() else config_path
-	
-	if resolved_path.exists():
-		with open(resolved_path, "r") as f:
-			data = json.load(f)
-			valid_keys = {f.name for f in dataclasses.fields(Config)}
-			filtered_data = {k: v for k, v in data.items() if k in valid_keys}
-			return Config(**filtered_data)
-	return None
+	"""Load a JSON configuration file, returning None if it is missing."""
+	resolved_path = (
+		CURRENT_DIR / config_path
+		if not config_path.is_absolute()
+		else config_path
+	)
+
+	if not resolved_path.exists():
+		return None
+
+	with resolved_path.open("r", encoding="utf-8") as file:
+		data = json.load(file)
+
+	if not isinstance(data, dict):
+		raise ValueError(
+			f"Configuration must contain a JSON object: {resolved_path}"
+		)
+
+	valid_keys = {item.name for item in dataclasses.fields(Config)}
+	filtered_data = {
+		key: value
+		for key, value in data.items()
+		if key in valid_keys
+	}
+
+	return Config(**filtered_data)
 
 
 def create_default_config(config_path: Path) -> Path:
-	"""Create a default configuration JSON file."""
-	resolved_path = CURRENT_DIR / config_path if not config_path.is_absolute() else config_path
+	"""Create a default JSON configuration file."""
+	resolved_path = (
+		CURRENT_DIR / config_path
+		if not config_path.is_absolute()
+		else config_path
+	)
+
 	config = Config()
 	resolved_path.parent.mkdir(parents=True, exist_ok=True)
-	with open(resolved_path, "w") as f:
-		json.dump(asdict(config), f, indent=4)
+
+	with resolved_path.open("w", encoding="utf-8") as file:
+		json.dump(asdict(config), file, indent=4)
+
 	return resolved_path
 
 
 def parse_args() -> argparse.Namespace:
-	"""Parse terminal arguments for config path and new model flag."""
+	"""Parse command-line arguments."""
 	parser = argparse.ArgumentParser(
-		description="Train a DQN agent on Pendulum-v1 using a JSON config file."
+		description=(
+			"Train a DQN agent on Pendulum-v1 "
+			"using a JSON configuration file."
+		)
 	)
 
 	parser.add_argument(
@@ -99,8 +170,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--new-model",
 		action="store_true",
-		default=False,
-		help="Force creation of a new model instead of attempting to resume.",
+		help="Create a new model instead of resuming a checkpoint.",
 	)
 
 	return parser.parse_args()
@@ -110,8 +180,7 @@ def create_agent(
 	env: gym.Env,
 	config: Config,
 ) -> tuple[SimpleDQNTrainAgent, DiscreteActionMapper]:
-	"""Create the DQN agent and discrete action mapper."""
-
+	"""Create the DQN agent and its discrete action mapper."""
 	if not isinstance(env.observation_space, gym.spaces.Box):
 		raise ValueError("Expected observation space to be Box.")
 
@@ -119,7 +188,9 @@ def create_agent(
 		raise ValueError("Expected action space to be Box.")
 
 	if len(env.observation_space.shape) != 1:
-		raise ValueError("Expected a one-dimensional observation space.")
+		raise ValueError(
+			"Expected a one-dimensional observation space."
+		)
 
 	action_mapper = DiscreteActionMapper(
 		env.action_space,
@@ -152,8 +223,7 @@ def save_model(
 	agent: SimpleDQNTrainAgent,
 	state: TrainingState,
 ) -> None:
-	"""Save the model and current training metadata including config dictionary."""
-
+	"""Save the model, optimizer state, training progress, and config."""
 	save_path = config.resolved_save_path
 	save_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -179,8 +249,7 @@ def train_loop(
 	action_mapper: DiscreteActionMapper,
 	state: TrainingState,
 ) -> TrainingState:
-	"""Train the agent while updating shared training state."""
-
+	"""Train the agent while updating the shared training state."""
 	for episode in range(
 		state.completed_episodes + 1,
 		config.episodes + 1,
@@ -248,15 +317,16 @@ def train_loop(
 				else 0.0
 			)
 
-			print(
-				f"Episode {episode:,} | "
-				f"Epsilon: {state.epsilon:.5f} | "
-				f"Recent average reward: {rewards.mean():.2f} | "
-				f"Recent std: {rewards.std():.2f} | "
-				f"Recent min: {rewards.min():.2f} | "
-				f"Recent max: {rewards.max():.2f} | "
-				f"Average loss: {average_loss:.6f}"
-			)
+			if rewards.size:
+				print(
+					f"Episode {episode:,} | "
+					f"Epsilon: {state.epsilon:.5f} | "
+					f"Recent average reward: {rewards.mean():.2f} | "
+					f"Recent std: {rewards.std():.2f} | "
+					f"Recent min: {rewards.min():.2f} | "
+					f"Recent max: {rewards.max():.2f} | "
+					f"Average loss: {average_loss:.6f}"
+				)
 
 			state.loss_sum = 0.0
 			state.loss_count = 0
@@ -287,8 +357,7 @@ def train_loop(
 
 
 def print_config(config: Config, state: TrainingState) -> None:
-	"""Print the training configuration."""
-
+	"""Print the effective training configuration."""
 	print(
 		f"Training for up to {config.episodes:,} episodes\n"
 		f"Hidden dimension: {config.hidden_dim}\n"
@@ -296,7 +365,7 @@ def print_config(config: Config, state: TrainingState) -> None:
 		f"Target update frequency: {config.target_update_freq}\n"
 		f"Learning rate: {config.learning_rate}\n"
 		f"Discount factor: {config.discount_factor}\n"
-		f"Initial epsilon: {state.epsilon}\n"
+		f"Initial/current epsilon: {state.epsilon}\n"
 		f"Minimum epsilon: {config.min_epsilon}\n"
 		f"Epsilon decay: {config.epsilon_decay}\n"
 		f"Device: {config.device}\n"
@@ -309,47 +378,102 @@ def print_config(config: Config, state: TrainingState) -> None:
 
 
 def main() -> None:
+	"""Load configuration, resume if possible, and train the agent."""
 	args = parse_args()
 	config = load_config(args.config)
 
 	if config is None:
 		created_path = create_default_config(args.config)
-		print(f"Configuration file was not found. Default configuration created at: {created_path}")
+		print(
+			"Configuration file was not found. "
+			f"Default configuration created at: {created_path}"
+		)
 		return
 
 	env = gym.make("Pendulum-v1")
 
 	try:
-		agent, action_mapper = create_agent(env=env, config=config)
 		state = TrainingState(epsilon=config.initial_epsilon)
-
+		checkpoint: dict[str, Any] | None = None
 		save_path = config.resolved_save_path
 
 		if not args.new_model and save_path.exists():
 			print(f"Checking existing checkpoint at {save_path}...")
-			checkpoint = torch.load(save_path, map_location=config.device)
-			saved_config = checkpoint.get("config", {})
 
-			current_config_dict = asdict(config)
-			if "save_path" in saved_config:
-				saved_config["save_path"] = str(saved_config["save_path"])
-			current_config_dict["save_path"] = str(current_config_dict["save_path"])
+			loaded = torch.load(
+				save_path,
+				map_location=config.device,
+				weights_only=False,
+			)
 
-			if saved_config == current_config_dict:
-				agent.load_save_state(checkpoint)
-				state.completed_episodes = checkpoint.get("episodes", 0)
-				state.epsilon = checkpoint.get("epsilon", config.initial_epsilon)
-				state.total_reward_sum = checkpoint.get("total_reward_sum", 0.0)
-				state.successful_episodes = checkpoint.get("successful_episodes", 0)
-				print(f"Configuration matches! Resuming training from episode {state.completed_episodes:,}.")
+			if not isinstance(loaded, dict):
+				raise ValueError("Invalid checkpoint format.")
+
+			saved_config = loaded.get("config", {})
+			if not isinstance(saved_config, dict):
+				raise ValueError(
+					"Checkpoint configuration must be a dictionary."
+				)
+
+			can_resume, mismatched_fields = config.can_resume_with(
+				saved_config
+			)
+
+			if can_resume:
+				# Retain the current JSON value for early_exit_count.
+				# Restore every other recognized setting from the checkpoint.
+				current_early_exit_count = config.early_exit_count
+
+				config = config.merged_with_checkpoint(saved_config)
+				config.early_exit_count = current_early_exit_count
+
+				checkpoint = loaded
+
+				print("Checkpoint architecture is compatible.")
+				print("Restoring saved training configuration.")
+				print(
+					"Using current early_exit_count from JSON: "
+					f"{config.early_exit_count}"
+				)
 			else:
-				print("Configuration mismatch detected between checkpoint and configuration file!")
-				print("Starting fresh model creation due to config mismatch.")
+				print(
+					"Critical configuration mismatch detected: "
+					f"{mismatched_fields}"
+				)
+				print("Starting a fresh model.")
+
+		elif args.new_model:
+			print("--new-model specified. Creating a fresh model.")
 		else:
-			if args.new_model:
-				print("--new-model flag specified. Creating a fresh model.")
-			else:
-				print("No existing model found. Creating a fresh model.")
+			print("No existing model found. Creating a fresh model.")
+
+		# Build the agent using the effective configuration.
+		agent, action_mapper = create_agent(
+			env=env,
+			config=config,
+		)
+
+		if checkpoint is not None:
+			agent.load_save_state(checkpoint)
+
+			state.completed_episodes = checkpoint.get("episodes", 0)
+			state.epsilon = checkpoint.get(
+				"epsilon",
+				config.initial_epsilon,
+			)
+			state.total_reward_sum = checkpoint.get(
+				"total_reward_sum",
+				0.0,
+			)
+			state.successful_episodes = checkpoint.get(
+				"successful_episodes",
+				0,
+			)
+
+			print(
+				"Resuming training from episode "
+				f"{state.completed_episodes:,}."
+			)
 
 		interrupted_by_user = False
 
@@ -357,13 +481,16 @@ def main() -> None:
 			nonlocal interrupted_by_user
 			interrupted_by_user = True
 
-			save_model(config, agent, state)
+			#save_model(config, agent, state)
 
 			print(
 				"\nTraining interrupted by user at episode "
 				f"{state.completed_episodes:,}."
 			)
-			print(f"Model checkpoint saved to: {config.resolved_save_path}")
+			# print(
+			# 	f"Model checkpoint saved to: "
+			# 	f"{config.resolved_save_path}"
+			# )
 
 		print_config(config, state)
 
@@ -397,7 +524,10 @@ def main() -> None:
 				f"{state.successful_episodes}"
 			)
 			print(f"Final epsilon: {state.epsilon:.5f}")
-			print(f"Model checkpoint saved to: {config.resolved_save_path}")
+			print(
+				f"Model checkpoint saved to: "
+				f"{config.resolved_save_path}"
+			)
 
 	finally:
 		env.close()

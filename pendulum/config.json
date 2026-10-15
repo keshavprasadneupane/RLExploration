@@ -7,11 +7,11 @@
 	"discount_factor": 0.99,
 	"initial_epsilon": 1.0,
 	"min_epsilon": 0.05,
-	"epsilon_decay": 0.9997,
+	"epsilon_decay": 0.9996,
 	"device": "cuda",
-	"early_exit_reward": -200.0,
-	"early_exit_count": 100,
+	"early_exit_reward": -100.0,
+	"early_exit_count": 2500,
 	"log_interval": 500,
-	"save_interval": 10000,
+	"save_interval": 1000,
 	"save_path": "models/pendulum_dqn_128_h.pth"
 }
