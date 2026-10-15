@@ -1,0 +1,15 @@
+{
+	"episodes": 50000000,
+	"hidden_dim": 16,
+	"target_update_freq": 500,
+	"learning_rate": 0.001,
+	"discount_factor": 0.99,
+	"initial_epsilon": 1.0,
+	"min_epsilon": 0.1,
+	"epsilon_decay": 0.9999,
+	"device": "cuda",
+	"early_exit_reward": 500.0,
+	"early_exit_count": 20,
+	"log_interval": 1000,
+	"save_path": "models/cartpole_dqn.pth"
+}

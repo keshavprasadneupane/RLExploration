@@ -1,0 +1,17 @@
+{
+	"episodes": 50000000,
+	"hidden_dim": 128,
+	"output_dim": 61,
+	"target_update_freq": 1000,
+	"learning_rate": 0.0005,
+	"discount_factor": 0.99,
+	"initial_epsilon": 1.0,
+	"min_epsilon": 0.05,
+	"epsilon_decay": 0.9997,
+	"device": "cuda",
+	"early_exit_reward": -200.0,
+	"early_exit_count": 100,
+	"log_interval": 500,
+	"save_interval": 10000,
+	"save_path": "models/pendulum_dqn_128_h.pth"
+}
