@@ -8,7 +8,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 
-from shared.agent.simple_dqn_agent import SimpleDQNTestAgent
+from shared.agent.dqn_agent import DQNetworkTestAgent
 from shared.network.feed_forward import FeedForward
 from shared.wrapper import stop_by_user
 from shared.validate import (
@@ -91,7 +91,7 @@ def load_checkpoint(
 		checkpoint = torch.load(
 			model_path,
 			map_location=device,
-			weights_only=True,
+			weights_only=False,  # Load the entire checkpoint, including metadata
 		)
 	except pickle.UnpicklingError as error:
 		raise SystemExit(
@@ -112,8 +112,6 @@ def load_checkpoint(
 			"Invalid checkpoint: missing 'network_state_dict'."
 		)
 
-	# 'meta' is written by train.py: progress counters plus the training config.
-	# Older checkpoints do not have it, so it is optional here.
 	meta = checkpoint.get("meta")
 	if meta is not None and not isinstance(meta, dict):
 		raise ValueError(
@@ -129,12 +127,12 @@ def get_meta(checkpoint: dict[str, Any]) -> dict[str, Any]:
 	return checkpoint.get("meta") or {}
 
 
-def infer_network_dims(checkpoint: dict[str, Any]) -> tuple[int, int]:
-	"""Automatically infer hidden dimension and output dimension from saved weights."""
+def infer_network_dims(checkpoint: dict[str, Any]) -> tuple[list[int], int]:
+	"""Automatically infer hidden dimensions list and output dimension from saved weights."""
 
 	network_state = checkpoint["network_state_dict"]
 	
-	# Typically, Sequential linear layers in FeedForward are keyed like nn.0.weight, nn.2.weight, etc.
+	# Weight keys in FeedForward are typically sequential (e.g., nn.0.weight, nn.2.weight, etc.)
 	weight_keys = [k for k in network_state.keys() if k.endswith(".weight")]
 	
 	if not weight_keys:
@@ -142,19 +140,17 @@ def infer_network_dims(checkpoint: dict[str, Any]) -> tuple[int, int]:
 
 	weight_keys.sort(key=lambda x: int(x.split(".")[1]))
 
-	first_weight = network_state[weight_keys[0]]
-	last_weight = network_state[weight_keys[-1]]
+	# All weights except the last one belong to hidden layers
+	hidden_dims = [int(network_state[k].shape[0]) for k in weight_keys[:-1]]
+	output_dim = int(network_state[weight_keys[-1]].shape[0])
 
-	hidden_dim = int(first_weight.shape[0])
-	output_dim = int(last_weight.shape[0])
-
-	if hidden_dim < 1 or output_dim < 1:
+	if not hidden_dims or output_dim < 1:
 		raise ValueError("Invalid checkpoint: dimensions must be positive integers.")
 
-	return hidden_dim, output_dim
+	return hidden_dims, output_dim
 
 
-def resolve_network_dims(checkpoint: dict[str, Any]) -> tuple[int, int]:
+def resolve_network_dims(checkpoint: dict[str, Any]) -> tuple[list[int], int]:
 	"""
 	Get the network dimensions from the saved weights.
 
@@ -162,7 +158,7 @@ def resolve_network_dims(checkpoint: dict[str, Any]) -> tuple[int, int]:
 	training config (meta["config"]), its hidden_dim must agree with them.
 	"""
 
-	hidden_dim, output_dim = infer_network_dims(checkpoint)
+	hidden_dims, output_dim = infer_network_dims(checkpoint)
 
 	saved_config = get_meta(checkpoint).get("config", {})
 	saved_hidden_dim = (
@@ -171,14 +167,21 @@ def resolve_network_dims(checkpoint: dict[str, Any]) -> tuple[int, int]:
 		else None
 	)
 
-	if saved_hidden_dim is not None and saved_hidden_dim != hidden_dim:
-		raise ValueError(
-			"Checkpoint is inconsistent: saved config says "
-			f"hidden_dim={saved_hidden_dim}, but the weights have "
-			f"hidden_dim={hidden_dim}."
+	if saved_hidden_dim is not None:
+		# Normalize saved_hidden_dim to a list for comparison
+		expected_dims = (
+			saved_hidden_dim
+			if isinstance(saved_hidden_dim, list)
+			else [saved_hidden_dim]
 		)
+		if expected_dims != hidden_dims:
+			raise ValueError(
+				"Checkpoint is inconsistent: saved config says "
+				f"hidden_dim={saved_hidden_dim}, but the weights have "
+				f"hidden_dim={hidden_dims}."
+			)
 
-	return hidden_dim, output_dim
+	return hidden_dims, output_dim
 
 
 def print_training_info(checkpoint: dict[str, Any]) -> None:
@@ -200,7 +203,7 @@ def print_training_info(checkpoint: dict[str, Any]) -> None:
 
 def run_episode(
 	env: gym.Env,
-	agent: SimpleDQNTestAgent,
+	agent: DQNetworkTestAgent,
 ) -> float:
 	"""Run one evaluation episode using greedy actions."""
 
@@ -251,7 +254,7 @@ def main() -> None:
 
 	# Load checkpoint and automatically grab dimensions
 	checkpoint = load_checkpoint(model_path, args.device)
-	hidden_dim, output_dim = resolve_network_dims(checkpoint)
+	hidden_dims, output_dim = resolve_network_dims(checkpoint)
 
 	env = gym.make(
 		"MountainCar-v0",
@@ -271,15 +274,15 @@ def main() -> None:
 				"Expected action space to be of type Discrete."
 			)
 
-		# Instantiate the network with dynamically grabbed dimensions
+		# Instantiate the network with the full hidden_dims list
 		network = FeedForward(
 			input_dim=env.observation_space.shape[0],
 			output_dim=output_dim,
-			hidden_dim=[hidden_dim],
+			hidden_dim=hidden_dims,
 			device=args.device,
 		)
 
-		agent = SimpleDQNTestAgent(
+		agent = DQNetworkTestAgent(
 			network=network,
 		)
 
@@ -289,7 +292,7 @@ def main() -> None:
 		print(f"Model checkpoint: {model_path}")
 		print_training_info(checkpoint)
 		print()
-		print(f"Hidden dimension: {hidden_dim}")
+		print(f"Hidden dimensions: {hidden_dims}")
 		print(f"Output dimension: {output_dim}")
 		print(f"Device: {args.device}")
 		print(f"Render mode: {args.render_mode}")

@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar, Dict, FrozenSet, Tuple, Optional
+
 from shared.tools.config_base import OverWrightOperation, ConfigBase
 from shared.validate import resolve_path
 
@@ -8,10 +9,10 @@ from shared.validate import resolve_path
 @dataclass
 class MountainCarConfig(ConfigBase):
 	episodes: int = 50_000
-	hidden_dim: int = 64 
-	target_update_freq: int = 500 
+	hidden_dim: list[int] = field(default_factory=lambda: [64])
+	target_update_freq: int = 500
 	learning_rate: float = 0.0005
-	discount_factor: float = 0.99 
+	discount_factor: float = 0.99
 	initial_epsilon: float = 1.0
 	min_epsilon: float = 0.01
 	epsilon_decay: float = 0.995
@@ -21,17 +22,33 @@ class MountainCarConfig(ConfigBase):
 	save_interval: int = 500
 	save_path: str = "models/mountain_car_dqn.pth"
 
-	CRITICAL_FIELDS: ClassVar[FrozenSet[str]] = frozenset({"hidden_dim", "device"})
+	# Experience replay configuration
+	replay_capacity: int = 100_000
+	replay_batch_size: int = 64
+
+	CRITICAL_FIELDS: ClassVar[FrozenSet[str]] = frozenset({
+		"hidden_dim",
+		"device",
+	})
+
 	OVERWRITABLE_FIELDS: ClassVar[FrozenSet[str]] = frozenset({
 		"log_interval",
-		"learning_rate", 
-		"target_update_freq", 
-		"discount_factor", 
-		"min_epsilon", 
+		"save_interval",
+		"save_path",
+		"learning_rate",
+		"target_update_freq",
+		"discount_factor",
+		"initial_epsilon",
+		"min_epsilon",
 		"epsilon_decay",
 		"satisfactory_reward_threshold",
+		"replay_capacity",
+		"replay_batch_size",
 	})
-	SPECIAL_OVERWRITABLE_FIELDS: ClassVar[Dict[str, Tuple[OverWrightOperation, str, str]]] = {
+
+	SPECIAL_OVERWRITABLE_FIELDS: ClassVar[
+		Dict[str, Tuple[OverWrightOperation, str, str]]
+	] = {
 		"episodes": (
 			OverWrightOperation.GREATERTHAN,
 			"episodes",
@@ -39,10 +56,11 @@ class MountainCarConfig(ConfigBase):
 		)
 	}
 
-	# Numerical bound definitions (min_val, max_val, inclusive/exclusive or custom check)
-	BOUNDS: ClassVar[Dict[str, Tuple[Optional[float], Optional[float]]]] = {
+	# Numerical bounds: (minimum, maximum)
+	BOUNDS: ClassVar[
+		Dict[str, Tuple[Optional[float], Optional[float]]]
+	] = {
 		"episodes": (1, None),
-		"hidden_dim": (1, 4096),
 		"target_update_freq": (1, None),
 		"learning_rate": (1e-6, 1.0),
 		"discount_factor": (0.0, 1.0),
@@ -52,7 +70,40 @@ class MountainCarConfig(ConfigBase):
 		"satisfactory_reward_threshold": (None, 0.0),
 		"log_interval": (1, None),
 		"save_interval": (1, None),
+		"replay_capacity": (1, None),
+		"replay_batch_size": (1, None),
 	}
+
+	def __post_init__(self) -> None:
+		"""Validate network architecture and replay configuration."""
+		if (
+			not isinstance(self.hidden_dim, list)
+			or not self.hidden_dim
+			or not all(
+				isinstance(d, int) and not isinstance(d, bool)
+				and 1 <= d <= 4096
+				for d in self.hidden_dim
+			)
+		):
+			raise ValueError(
+				"hidden_dim must be a non-empty list of integers "
+				"between 1 and 4096."
+			)
+
+		if self.replay_batch_size > self.replay_capacity:
+			raise ValueError(
+				"replay_batch_size cannot exceed replay_capacity."
+			)
+
+		if self.min_epsilon > self.initial_epsilon:
+			raise ValueError(
+				"min_epsilon cannot exceed initial_epsilon."
+			)
+
+		if self.epsilon_decay <= 0.0 or self.epsilon_decay > 1.0:
+			raise ValueError(
+				"epsilon_decay must be greater than 0 and at most 1."
+			)
 
 	def resolved_save_path(self, current_dir: Path) -> Path:
 		"""Resolve the model path relative to the supplied directory."""

@@ -1,15 +1,20 @@
 {
-	"episodes": 50000,
-	"hidden_dim": 32,
-	"target_update_freq": 1000,
+	"episodes": 20000,
+	"hidden_dim": [
+		16,
+		32
+	],
+	"target_update_freq": 500,
 	"learning_rate": 0.001,
 	"discount_factor": 0.99,
 	"initial_epsilon": 1.0,
-	"min_epsilon": 0.05,
-	"epsilon_decay": 0.9997,
+	"min_epsilon": 0.01,
+	"epsilon_decay": 0.9995,
 	"device": "cpu",
-	"satisfactory_reward_threshold": 0.0,
-	"log_interval": 1000,
-	"save_interval": 1000,
-	"save_path": "models/mountain_car_dqn.pth"
+	"satisfactory_reward_threshold": -110.0,
+	"log_interval": 500,
+	"save_interval": 500,
+	"save_path": "models/mountain_car_dqn.pth",
+	"replay_capacity": 50000,
+	"replay_batch_size": 64
 }
