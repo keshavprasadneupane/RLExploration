@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import ClassVar, Dict, FrozenSet, Tuple, Optional
 
 from shared.tools.config_base import OverWrightOperation, ConfigBase
-from shared.validate import resolve_path
+from shared.utility import resolve_path
 
 
 @dataclass

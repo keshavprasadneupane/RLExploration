@@ -1,15 +1,20 @@
 {
-	"episodes": 50000000,
-	"hidden_dim": 24,
-	"target_update_freq": 500,
-	"learning_rate": 0.001,
+	"episodes": 50000,
+	"hidden_dim": [
+		24
+	],
+	"target_update_freq": 1000,
+	"learning_rate": 0.0003,
 	"discount_factor": 0.99,
 	"initial_epsilon": 1.0,
 	"min_epsilon": 0.1,
 	"epsilon_decay": 0.9999,
-	"device": "cuda",
-	"early_exit_reward": 475.0,
-	"early_exit_count": 100,
+	"device": "cpu",
+	"satisfactory_reward_threshold": 475,
 	"log_interval": 1000,
-	"save_path": "models/cartpole_dqn.pth"
+	"save_interval": 1000,
+	"save_path": "models/cart_pole_dqn.pth",
+	"replay_capacity": 100000,
+	"replay_batch_size": 0,
+	"replay_warmup": 8000
 }

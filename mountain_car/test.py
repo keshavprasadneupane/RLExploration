@@ -1,7 +1,6 @@
 import argparse
 import pickle
 from pathlib import Path
-from statistics import multimode
 from typing import Any
 
 import gymnasium as gym
@@ -13,9 +12,9 @@ from shared.network.feed_forward import FeedForward
 from shared.wrapper import stop_by_user
 from shared.validate import (
 	bounded_int,
-	resolve_path,
 	validate_device,
 )
+from shared.utility import resolve_path
 
 CURRENT_DIR = Path(__file__).resolve().parent
 
@@ -91,7 +90,7 @@ def load_checkpoint(
 		checkpoint = torch.load(
 			model_path,
 			map_location=device,
-			weights_only=False,  # Load the entire checkpoint, including metadata
+			weights_only=True,
 		)
 	except pickle.UnpicklingError as error:
 		raise SystemExit(

@@ -12,13 +12,10 @@ class ReplayBuffer:
 	"""Stores and randomly samples experience transitions for DQN."""
 
 	def __init__(self, capacity: int = 100_000) -> None:
-		if capacity <= 0:
-			raise ValueError("Replay buffer capacity must be positive.")
-
 		self.capacity = capacity
 		self._buffer: deque[
 			tuple[np.ndarray, int, float, np.ndarray, bool]
-		] = deque(maxlen=capacity)
+		] = deque(maxlen=capacity if capacity > 0 else 0)
 
 	def __len__(self) -> int:
 		return len(self._buffer)
@@ -32,6 +29,8 @@ class ReplayBuffer:
 		done: bool,
 	) -> None:
 		"""Adds one transition to replay memory."""
+		if self.capacity <= 0:
+			return
 		self._buffer.append(
 			(
 				np.array(state, dtype=np.float32, copy=True),
@@ -74,14 +73,12 @@ class ReplayBuffer:
 	def load_save_state(self, state: dict[str, Any]) -> None:
 		"""Restores replay memory from a checkpoint."""
 		capacity = int(state.get("capacity", self.capacity))
-		if capacity <= 0:
-			raise ValueError("Replay buffer capacity must be positive.")
-
 		self.capacity = capacity
-		self._buffer = deque(maxlen=capacity)
+		self._buffer = deque(maxlen=capacity if capacity > 0 else 0)
 
 		for transition in state.get("buffer", []):
 			self.add(*transition)
+
 
 
 class DQNetworkAgent:
@@ -132,8 +129,9 @@ class DQNetworkAgent:
 		return self.target_network.predict(state)
 
 
+
 class DQNetworkTrainAgent(DQNetworkAgent):
-	"""DQN training agent with experience replay."""
+	"""DQN training agent with optional experience replay."""
 
 	def __init__(
 		self,
@@ -141,22 +139,38 @@ class DQNetworkTrainAgent(DQNetworkAgent):
 		network: NNewtork,
 		optimizer: torch.optim.Optimizer,
 		target_update_freq: int = 1000,
-		replay_capacity: int = 100_000,
+		replay_capacity: int = 50_000,
 		batch_size: int = 64,
+		warmup: int = 0,
 	) -> None:
 		super().__init__(
 			network=network,
 			target_update_freq=target_update_freq,
 		)
 
-		if batch_size <= 0:
-			raise ValueError("Batch size must be positive.")
+		if batch_size < 0:
+			raise ValueError("Batch size cannot be negative.")
+
+		if batch_size > 0 and replay_capacity <= 0:
+			raise ValueError(
+				"Replay capacity must be positive when replay is enabled."
+			)
+
+		if warmup < 0:
+			raise ValueError("Warmup cannot be negative.")
 
 		self.optimizer = optimizer
 		self.learning_rate = self.optimizer.param_groups[0].get("lr", 0.001)
-
 		self.batch_size = batch_size
-		self.replay_buffer = ReplayBuffer(capacity=replay_capacity)
+		self.warmup = warmup
+
+		# A batch size of zero disables experience replay completely.
+		self.replay = batch_size > 0
+		self.replay_buffer: ReplayBuffer | None = (
+			ReplayBuffer(capacity=replay_capacity)
+			if self.replay
+			else None
+		)
 
 	def update_weights(
 		self,
@@ -168,29 +182,45 @@ class DQNetworkTrainAgent(DQNetworkAgent):
 		discount_factor: float = 0.99,
 	) -> float:
 		"""
-		Stores a transition and trains on a random mini-batch.
+		Updates network weights using replay or a single transition.
 
-		Returns the loss, or 0.0 while the replay buffer is filling.
+		batch_size > 0: Uses experience replay.
+		batch_size == 0: Trains directly on the current transition.
+
+		Returns the loss, or 0.0 while waiting for replay warmup.
 		"""
 		if not 0.0 <= discount_factor <= 1.0:
 			raise ValueError("Discount factor must be between 0 and 1.")
 
-		# Store the latest environment transition.
-		self.replay_buffer.add(
-			state=state,
-			action=action,
-			reward=reward,
-			next_state=next_state,
-			done=done,
-		)
+		if self.replay:
+			assert self.replay_buffer is not None
 
-		# Wait until a complete mini-batch is available.
-		if len(self.replay_buffer) < self.batch_size:
-			return 0.0
+			self.replay_buffer.add(
+				state=state,
+				action=action,
+				reward=reward,
+				next_state=next_state,
+				done=done,
+			)
 
-		states, actions, rewards, next_states, dones = (
-			self.replay_buffer.sample(self.batch_size)
-		)
+			# Wait until enough experiences are available.
+			if len(self.replay_buffer) < max(self.batch_size, self.warmup):
+				return 0.0
+
+			states, actions, rewards, next_states, dones = (
+				self.replay_buffer.sample(self.batch_size)
+			)
+		else:
+			# Online learning: use only the current transition.
+			states = np.expand_dims(state, axis=0).astype(
+				np.float32, copy=False
+			)
+			actions = np.asarray([action], dtype=np.int64)
+			rewards = np.asarray([reward], dtype=np.float32)
+			next_states = np.expand_dims(next_state, axis=0).astype(
+				np.float32, copy=False
+			)
+			dones = np.asarray([float(done)], dtype=np.float32)
 
 		states_tensor = torch.as_tensor(
 			states, dtype=torch.float32, device=self.device
@@ -210,14 +240,14 @@ class DQNetworkTrainAgent(DQNetworkAgent):
 
 		self.network.train()
 
-		# Select the Q-value corresponding to each sampled action.
+		# Get Q-values for the actions actually taken.
 		all_q_values: torch.Tensor = self.network(states_tensor)
 		current_q_values = all_q_values.gather(
 			dim=1,
 			index=actions_tensor.unsqueeze(1),
 		).squeeze(1)
 
-		# Calculate target Q-values without tracking gradients.
+		# Calculate target Q-values without computing gradients.
 		with torch.no_grad():
 			next_q_values: torch.Tensor = self.target_network(
 				next_states_tensor
@@ -247,18 +277,26 @@ class DQNetworkTrainAgent(DQNetworkAgent):
 		return float(loss.item())
 
 	def get_save_state(self) -> dict[str, Any]:
-		"""Returns all training states, including replay memory."""
-		return {
+		"""Returns training state, including replay memory when enabled."""
+		state: dict[str, Any] = {
 			"network_state_dict": self.network.state_dict(),
 			"target_network_state_dict": self.target_network.state_dict(),
 			"optimizer_state_dict": self.optimizer.state_dict(),
 			"steps": self.steps,
 			"batch_size": self.batch_size,
-			"replay_buffer_state": self.replay_buffer.get_save_state(),
+			"warmup": self.warmup,
+			"replay_enabled": self.replay,
 		}
 
+		if self.replay_buffer is not None:
+			state["replay_buffer_state"] = (
+				self.replay_buffer.get_save_state()
+			)
+
+		return state
+
 	def load_save_state(self, state: dict[str, Any]) -> None:
-		"""Restores training state, supporting older checkpoints."""
+		"""Restores training state and optional replay memory."""
 		self.network.load_state_dict(state["network_state_dict"])
 		self.target_network.load_state_dict(
 			state["target_network_state_dict"]
@@ -267,11 +305,24 @@ class DQNetworkTrainAgent(DQNetworkAgent):
 		self.steps = int(state["steps"])
 
 		self.batch_size = int(state.get("batch_size", self.batch_size))
+		self.warmup = int(state.get("warmup", self.warmup))
+		self.replay = self.batch_size > 0
 
-		if "replay_buffer_state" in state:
-			self.replay_buffer.load_save_state(
-				state["replay_buffer_state"]
-			)
+		if self.replay:
+			replay_state = state.get("replay_buffer_state")
+
+			if replay_state is not None:
+				self.replay_buffer = ReplayBuffer(
+					capacity=int(replay_state.get("capacity", 50_000))
+				)
+				self.replay_buffer.load_save_state(replay_state)
+			else:
+				# Support checkpoints created before replay state was saved.
+				self.replay_buffer = ReplayBuffer()
+		else:
+			self.replay_buffer = None
+
+
 
 
 class DQNetworkTestAgent(DQNetworkAgent):

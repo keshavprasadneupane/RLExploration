@@ -186,21 +186,26 @@ class ConfigBase:
 	# Always taken from the current config on resume.
 	OVERWRITABLE_FIELDS: ClassVar[FrozenSet[str]] = frozenset()
 
-	# field_name: (operation, progress_field, saved_field)
-	#
-	# progress_field: '__' path into the checkpoint meta data holding how far
-	#                 training has progressed (e.g. "episodes" = completed episodes).
-	# saved_field:    '__' path into the checkpoint meta data holding the value
-	#                 the checkpoint was saved with (e.g. "config__episodes").
-	#
-	# Rule: the new value from the current config is accepted only if
-	# operation(new_value, progress_value) is True ("accept if new <op> progress").
-	# Otherwise the saved value is kept.
-	#
-	# Example: (GREATERTHAN, "episodes", "config__episodes")
-	#   completed=25_000, new=75_000 -> 75_000 > 25_000 is True  -> use 75_000
-	#   completed=25_000, new=15_000 -> 15_000 > 25_000 is False -> keep saved value
+
 	SPECIAL_OVERWRITABLE_FIELDS: ClassVar[Dict[str, Tuple[OverWrightOperation, str, str]]] = {}
+	"""
+		field_name: (current_field,(operation, progress_field, saved_field))
+		
+		Key: current config field name that is conditionally overwritable.
+		operation: OverWrightOperation enum value describing the comparison.
+		progress_field: '__' path into the checkpoint meta data holding how far
+						training has progressed (e.g. "episodes" = completed episodes).
+		saved_field:    '__' path into the checkpoint meta data holding the value
+					the checkpoint was saved with (e.g. "config__episodes").
+
+		Rule: the new value from the current config is accepted only if
+		operation(new_value, progress_value) is True ("accept if new <op> progress").
+		Otherwise the saved value is kept.
+		#
+		Example: (GREATERTHAN, "episodes", "config__episodes")
+			completed=25_000, new=75_000 -> 75_000 > 25_000 is True  -> use 75_000
+			completed=25_000, new=15_000 -> 15_000 > 25_000 is False -> keep saved value
+	"""
 	BOUNDS: ClassVar[Dict[str, Tuple[Any, Any]]] = {}
 
 	def __post_init__(self) -> None:

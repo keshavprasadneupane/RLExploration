@@ -1,6 +1,6 @@
 import argparse
+import pickle
 from pathlib import Path
-from statistics import multimode
 from typing import Any
 
 import gymnasium as gym
@@ -8,18 +8,18 @@ import numpy as np
 import torch
 
 from shared.agent.simple_dqn_agent import SimpleDQNTestAgent
-from shared.wrapper import stop_by_user
 from shared.network.feed_forward import FeedForward
+from shared.wrapper import stop_by_user
 from shared.validate import (
 	bounded_int,
-	resolve_path,
-	validate_device,  # Pre-flight check; network classes also validate device internally
+	validate_device,
 )
+from shared.utility import resolve_path
 
 CURRENT_DIR = Path(__file__).resolve().parent
 
 DEFAULTS = {
-	"model_path": CURRENT_DIR / "models" / "cartpole_dqn.pth",
+	"model_path": CURRENT_DIR / "models" / "cart_pole_dqn.pth",
 	"episodes": 100,
 	"render_mode": "none",
 	"device": "cpu",
@@ -86,11 +86,20 @@ def load_checkpoint(
 			f"Error: model checkpoint not found: {model_path}"
 		)
 
-	checkpoint = torch.load(
-		model_path,
-		map_location=device,
-		weights_only=True,
-	)
+	try:
+		checkpoint = torch.load(
+			model_path,
+			map_location=device,
+			weights_only=True,
+		)
+	except pickle.UnpicklingError as error:
+		raise SystemExit(
+			"Error: the checkpoint contains objects that safe loading "
+			"rejects (for example numpy scalars in its 'meta' block). "
+			"Resume training once with the current train.py so the "
+			"checkpoint is re-saved with plain Python types.\n"
+			f"Details: {error}"
+		) from error
 
 	if not isinstance(checkpoint, dict):
 		raise ValueError(
@@ -102,29 +111,90 @@ def load_checkpoint(
 			"Invalid checkpoint: missing 'network_state_dict'."
 		)
 
+	meta = checkpoint.get("meta")
+	if meta is not None and not isinstance(meta, dict):
+		raise ValueError(
+			"Invalid checkpoint: 'meta' must be a dictionary."
+		)
+
 	return checkpoint
 
 
-def get_hidden_dim(checkpoint: dict[str, Any]) -> int:
-	"""Infer the hidden layer size from the saved network weights."""
+def get_meta(checkpoint: dict[str, Any]) -> dict[str, Any]:
+	"""Return the checkpoint's training metadata, or {} for older checkpoints."""
+
+	return checkpoint.get("meta") or {}
+
+
+def infer_network_dims(checkpoint: dict[str, Any]) -> tuple[list[int], int]:
+	"""Automatically infer hidden dimensions list and output dimension from saved weights."""
 
 	network_state = checkpoint["network_state_dict"]
-	weight_key = "nn.0.weight"
+	
+	weight_keys = [k for k in network_state.keys() if k.endswith(".weight")]
+	
+	if not weight_keys:
+		raise ValueError("Cannot infer dimensions: no weight tensors found in state_dict.")
 
-	if weight_key not in network_state:
-		raise ValueError(
-			f"Cannot infer hidden dimension: "
-			f"checkpoint is missing '{weight_key}'."
+	weight_keys.sort(key=lambda x: int(x.split(".")[1]))
+
+	hidden_dims = [int(network_state[k].shape[0]) for k in weight_keys[:-1]]
+	output_dim = int(network_state[weight_keys[-1]].shape[0])
+
+	if not hidden_dims or output_dim < 1:
+		raise ValueError("Invalid checkpoint: dimensions must be positive integers.")
+
+	return hidden_dims, output_dim
+
+
+def resolve_network_dims(checkpoint: dict[str, Any]) -> tuple[list[int], int]:
+	"""
+	Get the network dimensions from the saved weights.
+
+	The weights are the source of truth. If the checkpoint also stores the
+	training config (meta["config"]), its hidden_dim must agree with them.
+	"""
+
+	hidden_dims, output_dim = infer_network_dims(checkpoint)
+
+	saved_config = get_meta(checkpoint).get("config", {})
+	saved_hidden_dim = (
+		saved_config.get("hidden_dim")
+		if isinstance(saved_config, dict)
+		else None
+	)
+
+	if saved_hidden_dim is not None:
+		expected_dims = (
+			saved_hidden_dim
+			if isinstance(saved_hidden_dim, list)
+			else [saved_hidden_dim]
 		)
+		if expected_dims != hidden_dims:
+			raise ValueError(
+				"Checkpoint is inconsistent: saved config says "
+				f"hidden_dim={saved_hidden_dim}, but the weights have "
+				f"hidden_dim={hidden_dims}."
+			)
 
-	hidden_dim = network_state[weight_key].shape[0]
+	return hidden_dims, output_dim
 
-	if hidden_dim < 1:
-		raise ValueError(
-			"Invalid checkpoint: hidden dimension must be positive."
-		)
 
-	return int(hidden_dim)
+def print_training_info(checkpoint: dict[str, Any]) -> None:
+	"""Print training progress stored in the checkpoint, if present."""
+
+	meta = get_meta(checkpoint)
+
+	if not meta:
+		print("Training info: not available (checkpoint has no metadata)")
+		return
+
+	epsilon = meta.get("epsilon")
+	epsilon_text = f"{epsilon:.5f}" if epsilon is not None else "n/a"
+
+	print(f"Trained episodes: {meta.get('episodes', 0):,}")
+	print(f"Training steps: {meta.get('steps', 0):,}")
+	print(f"Final epsilon: {epsilon_text}")
 
 
 def run_episode(
@@ -154,17 +224,12 @@ def print_statistics(rewards: list[float]) -> None:
 	"""Print descriptive statistics for episode rewards."""
 
 	values = np.asarray(rewards, dtype=np.float64)
-	modes = multimode(rewards)
 
 	print("\nEvaluation statistics")
 	print("=" * 40)
 	print(f"Episodes:           {len(values)}")
 	print(f"Mean:               {np.mean(values):.2f}")
 	print(f"Median:             {np.median(values):.2f}")
-	print(
-		f"Mode:               "
-		f"{', '.join(f'{mode:.0f}' for mode in modes)}"
-	)
 	print(f"Minimum:            {np.min(values):.2f}")
 	print(f"Maximum:            {np.max(values):.2f}")
 	print(f"Range:              {np.ptp(values):.2f}")
@@ -172,19 +237,19 @@ def print_statistics(rewards: list[float]) -> None:
 	print(f"25th percentile:    {np.percentile(values, 25):.2f}")
 	print(f"75th percentile:    {np.percentile(values, 75):.2f}")
 	print(f"95th percentile:    {np.percentile(values, 95):.2f}")
-	print(f"Rewards >= 475:     {np.count_nonzero(values >= 475)}")
-	print(f"Success rate:       {np.mean(values >= 475) * 100:.2f}%")
+	print(f"Rewards >= 475:     {np.count_nonzero(values >= 475.0)}")
+	print(f"Success rate (>=475): {np.mean(values >= 475.0) * 100:.2f}%")
+
 
 @stop_by_user(message="Evaluation interrupted by user.")
 def main() -> None:
-	"""Load a trained DQN checkpoint and evaluate the agent."""
+	"""Load a trained DQN checkpoint and evaluate the agent on CartPole-v1."""
 
 	args = parse_args()
 	model_path: Path = args.model_path
 
-	# Load the checkpoint before constructing the agent.
 	checkpoint = load_checkpoint(model_path, args.device)
-	hidden_dim = get_hidden_dim(checkpoint)
+	hidden_dims, output_dim = resolve_network_dims(checkpoint)
 
 	env = gym.make(
 		"CartPole-v1",
@@ -204,11 +269,10 @@ def main() -> None:
 				"Expected action space to be of type Discrete."
 			)
 
-		# Instantiate the FeedForward network independently.
 		network = FeedForward(
 			input_dim=env.observation_space.shape[0],
-			output_dim=env.action_space.n,
-			hidden_dim=[hidden_dim],
+			output_dim=output_dim,
+			hidden_dim=hidden_dims,
 			device=args.device,
 		)
 
@@ -216,12 +280,15 @@ def main() -> None:
 			network=network,
 		)
 
-		# Loading only the network weights from the checkpoint.
 		agent.network.load_state_dict(checkpoint["network_state_dict"])
 		agent.network.eval()
 
 		print(f"Model checkpoint: {model_path}")
-		print(f"Hidden dimension: {hidden_dim}")
+		print_training_info(checkpoint)
+		print()
+		print(f"Input dimension: {env.observation_space.shape[0]}")
+		print(f"Hidden dimensions: {hidden_dims}")
+		print(f"Output dimension: {output_dim}")
 		print(f"Device: {args.device}")
 		print(f"Render mode: {args.render_mode}")
 
